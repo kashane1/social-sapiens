@@ -2,23 +2,23 @@ const { ObjectId } = require('mongoose').Types;
 const { User, Thought } = require('../models');
 
 // this is my first attempt at friendCount
-const friendCount = async () =>
-  User.friends.aggregate() // this line is weird to me, might need to take out .friends
-    .count('friendCount')
-    .then((numberOfFriends) => numberOfFriends);
+// const friendCount = async () =>
+//   User.friends.aggregate() // this line is weird to me, might need to take out .friends
+//     .count('friendCount')
+//     .then((numberOfFriends) => numberOfFriends);
 
 // this will be my 2nd attempt at friendCount
-// const friendCount = async (userId) =>
-//   User.aggregate([
-//     // only include the given user by using $match
-//     { $match: { _id: ObjectId(userId) } },
-//     {
-//       $group: {
-//         _id: ObjectId(userId),
-//         friendCount: { $sum: '$friends' },
-//       },
-//     },
-//   ]);
+const friendCount = async (userId) =>
+  User.aggregate([
+    // only include the given user by using $match
+    { $match: { _id: ObjectId(userId) } },
+    {
+      $group: {
+        _id: ObjectId(userId),
+        friendCount: { $sum: '$friends' },
+      },
+    },
+  ]);
 
 
 module.exports = {
@@ -39,8 +39,8 @@ module.exports = {
   },
   // get a single user
   getOneUser(req, res) {
-    User.findOne({ _id: req.params.userId })
-    .then('-__v')
+    User.findOne({ _id: req.params.id })
+    .select('-__v')
     .populate('thoughts')
     .populate('friends')
     .then(async (user) => {
@@ -48,12 +48,12 @@ module.exports = {
         user,
         friendCount: await friendCount(),
       };
-      return res.json(userObj);
+      return userObj;
     })
-    .then(async (user) =>
-      !user
+    .then(async (userObj) =>
+      !userObj
         ? res.status(404).json({ message: 'No user with that ID' })
-        : res.json(user)
+        : res.json(userObj)
     )
     .catch((err) => {
       console.log(err);
@@ -74,7 +74,6 @@ module.exports = {
     User.findOneAndUpdate(
       { _id: req.params.userId },
       { $set: {username: req.body.username} },
-      { $set: {email: req.body.email} },
       { runValidators: true, new: true }
     )
       .then((user) =>
@@ -88,18 +87,24 @@ module.exports = {
       })
   },
   // delete a user and remove their thoughts
+  // definitely a tricky one, the deleteMany
   deleteUser(req, res) {
     User.findOneAndRemove({ _id: req.params.userId })
       .then((user) => 
         !user
           ? res.status(404).json({ message: 'No user with that ID' })
           : Thought.deleteMany(
-            { username: User.findOne(
-              { _id: req.params.userId })
+            { username: User.findOne( { _id: req.params.userId })
               .then((user) => { 
                 return user.username; 
               })
             }
+            // also can try this way:
+            // { username: ((async) => {
+            //   User.findOne({ _id: req.params.thoughtId })
+            //     .then((userData) => { return userData.username })
+            //   })
+            // }
           )
       )
       .then((user) =>
@@ -116,7 +121,7 @@ module.exports = {
   addFriend(req, res) {
     User.findOneAndUpdate(
       { _id: req.params.userId },
-      { $addToSet: {friends: req.body} },
+      { $addToSet: {friends: req.params.friendId} },
       { runValidators: true, new: true }
     )
       .then((user) =>
@@ -129,8 +134,8 @@ module.exports = {
         return res.status(500).json(err);
       })
   },
-  // remove a friend from a user
-  removeFriend(req, res) {
+  // delete a friend from a user
+  deleteFriend(req, res) {
     User.findOneAndUpdate(
       { _id: req.params.userId },
       { $pull: { friends: { friendId: req.params.friendId } } }, // i think this is a special case, and i dont need the friendId object there
@@ -139,7 +144,7 @@ module.exports = {
       .then((user) =>
         !user
           ? res.status(404).json({ message: 'No user with that ID' })
-          : res.json({ message: 'Successfully removed friend to user' })
+          : res.json({ message: 'Successfully deleted friend from user' })
       )
       .catch((err) => {
         console.log(err);
