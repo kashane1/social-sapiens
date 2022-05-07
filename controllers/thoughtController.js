@@ -1,40 +1,10 @@
 const { ObjectId } = require('mongoose').Types;
 const { User, Thought } = require('../models');
 
-// this is my first attempt at reactionCount
-// const reactionCount = async () =>
-//   Thought.reactions.aggregate() // this line is weird to me, might need to take out .reactions
-//     .count('reactionCount')
-//     .then((numberOfReactions) => numberOfReactions);
-
-// this will be my 2nd attempt at reactionCount
-const reactionCount = async (thoughtId) =>
-  Thought.aggregate([
-    // only include the given thought by using $match
-    { $match: { _id: ObjectId(thoughtId) } },
-    {
-      $group: {
-        _id: ObjectId(thoughtId),
-        numberOfReactions: { $sum: '$reactions' },
-      },
-    },
-  ]);
-
-
-// need to start here and change all the user stuff to thought stuff.
-// might be some small differences when it comes to the reactions? because we arent passing in :reactionId
-
 module.exports = {
   // get all thoughts
   getThoughts(req, res) {
     Thought.find()
-      .then(async (thoughts) => {
-        const thoughtsObj = {
-          thoughts,
-          // reactionCount: await reactionCount(),
-        };
-        return thoughtsObj;
-      })
       .then(async (thoughtsObj) =>
         !thoughtsObj
           ? res.status(404).json({ message: 'No user with that ID' })
@@ -50,13 +20,6 @@ module.exports = {
     Thought.findOne({ _id: req.params.thoughtId })
     .select('-__v')
     .populate('reactions')
-    .then(async (thought) => {
-      const thoughtObj = {
-        thought,
-        reactionCount: await reactionCount(),
-      };
-      return res.json(thoughtObj);
-    })
     .then(async (thought) =>
       !thought
         ? res.status(404).json({ message: 'No thought with that ID' })
@@ -72,11 +35,16 @@ module.exports = {
     Thought.create(req.body)
       .then((thoughtData) => {
         return User.findOneAndUpdate(
-          { _id: req.params.userId },
+          { _id: req.body.userId },
           { $addToSet: { thoughts: thoughtData._id}}
         );
       })
-      .then((thought) => res.json(thought))
+      .then(async (user) =>
+        !user
+          // needed a small edit here, couldn't find the problem
+          ? res.status(404).json({ message: 'Successfully created thought' }) 
+          : res.json(user)
+      )
       .catch((err) => {
         console.log(err);
         return res.status(500).json(err);
@@ -87,7 +55,6 @@ module.exports = {
     Thought.findOneAndUpdate(
       { _id: req.params.thoughtId },
       { $set: {thoughtText: req.body.thoughtText} },
-      { $set: {createdAt: Date.now} },
       { runValidators: true, new: true }
     )
       .then((thought) =>
@@ -134,7 +101,7 @@ module.exports = {
   deleteReaction(req, res) {
     Thought.findOneAndUpdate(
       { _id: req.params.thoughtId },
-      { $pull: { reactions: { reactionId: req.params.reactionId } } }, // i think this is a special case, and i dont need the friendId object there
+      { $pull: { reactions: { reactionId: req.params.reactionId } } }, 
       { runValidators: true, new: true }
     )
       .then((thought) =>
